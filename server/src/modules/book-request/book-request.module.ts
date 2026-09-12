@@ -34,6 +34,7 @@ import { QbittorrentAdapter } from './download-clients/adapters/qbittorrent.adap
 import { TransmissionAdapter } from './download-clients/adapters/transmission.adapter';
 import { DelugeAdapter } from './download-clients/adapters/deluge.adapter';
 import { NzbgetAdapter } from './download-clients/adapters/nzbget.adapter';
+import { OpenBooksAdapter } from './download-clients/adapters/openbooks.adapter';
 import { INDEXER_ADAPTERS } from './indexers/indexer-adapter';
 import { IndexerConfigService } from './indexers/indexer-config.service';
 import { IndexerController } from './indexers/indexer.controller';
@@ -111,15 +112,17 @@ import { RequestWatchdogService } from './fulfillment/request-watchdog.service';
     TransmissionAdapter,
     DelugeAdapter,
     NzbgetAdapter,
+    OpenBooksAdapter,
     {
       provide: DOWNLOAD_CLIENT_ADAPTERS,
-      useFactory: (qbittorrent: QbittorrentAdapter, transmission: TransmissionAdapter, deluge: DelugeAdapter, nzbget: NzbgetAdapter) => [
-        qbittorrent,
-        transmission,
-        deluge,
-        nzbget,
-      ],
-      inject: [QbittorrentAdapter, TransmissionAdapter, DelugeAdapter, NzbgetAdapter],
+      useFactory: (
+        qbittorrent: QbittorrentAdapter,
+        transmission: TransmissionAdapter,
+        deluge: DelugeAdapter,
+        nzbget: NzbgetAdapter,
+        openbooks: OpenBooksAdapter,
+      ) => [qbittorrent, transmission, deluge, nzbget, openbooks],
+      inject: [QbittorrentAdapter, TransmissionAdapter, DelugeAdapter, NzbgetAdapter, OpenBooksAdapter],
     },
 
     IndexerRepository,

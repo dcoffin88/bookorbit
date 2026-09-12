@@ -8,6 +8,10 @@ const HASH_A = 'a'.repeat(40);
 const HASH_B = 'b'.repeat(40);
 
 function row(overrides: Partial<BookRequestDownloadRow> = {}): BookRequestDownloadRow {
+  const directFields =
+    overrides.source === 'direct_url' && overrides.directFileName === undefined && overrides.downloadClientId === null
+      ? { directFileName: 'download.epub' }
+      : {};
   return {
     id: 11,
     requestId: 7,
@@ -22,6 +26,7 @@ function row(overrides: Partial<BookRequestDownloadRow> = {}): BookRequestDownlo
     completedAt: null,
     grabbedAt: new Date(Date.now() - 10 * 60 * 1000),
     createdAt: new Date(Date.now() - 10 * 60 * 1000),
+    ...directFields,
     ...overrides,
   } as BookRequestDownloadRow;
 }
@@ -154,6 +159,19 @@ describe('DownloadMonitorService.tick', () => {
     // A direct file has no client row, so nothing is asked of a download client on its behalf.
     expect(adapter.status).not.toHaveBeenCalled();
     now.mockRestore();
+  });
+
+  it('polls a client-backed direct file through its download client', async () => {
+    const { service, direct, adapter, clients } = makeService({
+      active: [row({ source: 'direct_url', downloadClientId: 4 })],
+      statuses: [status({ state: 'completed', progressPercent: 100, downloadedBytes: 1000 })],
+    });
+
+    await polled(service);
+
+    expect(clients.resolveConfig).toHaveBeenCalledWith(4);
+    expect(adapter.status).toHaveBeenCalledWith([HASH_A], expect.anything());
+    expect(direct.status).not.toHaveBeenCalled();
   });
 
   it('does not increase torrent-client polling beyond once per five seconds', async () => {
@@ -461,6 +479,20 @@ describe('DownloadMonitorService.tick', () => {
     await polled(service);
 
     expect(fulfillment.failDownload).toHaveBeenCalledWith(expect.objectContaining({ id: 11 }), expect.stringContaining('cannot be resumed'));
+  });
+
+  it('describes a missing client-backed direct file as missing from the client', async () => {
+    const { service, fulfillment } = makeService({
+      active: [row({ source: 'direct_url', downloadClientId: 4 })],
+      statuses: [],
+    });
+
+    await polled(service);
+
+    expect(fulfillment.failDownload).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 11 }),
+      expect.stringContaining('no longer has this download'),
+    );
   });
 
   /**

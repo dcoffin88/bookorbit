@@ -2848,7 +2848,8 @@
           "qbittorrent": "qBittorrent",
           "transmission": "Transmission",
           "deluge": "Deluge",
-          "nzbget": "NZBGet"
+          "nzbget": "NZBGet",
+          "openbooks": "OpenBooks"
         },
         "color": {
           "label": "Color",
@@ -3285,7 +3286,8 @@
           "qbittorrent": "Your own qBittorrent. Needs an address and an account.",
           "transmission": "Your own Transmission. It has no categories, so the category becomes a subfolder of its download directory.",
           "deluge": "Your own Deluge. Sign in with the Web UI password; the category needs the Label plugin switched on.",
-          "nzbget": "Your own NZBGet. BookOrbit sends NZB files over its JSON-RPC API."
+          "nzbget": "Your own NZBGet. BookOrbit sends NZB files over its JSON-RPC API.",
+          "openbooks": "Your own OpenBooks instance. Use the library token as the password, and map its download folder into BookOrbit."
         },
         "searchHealth": {
           "failingOnce": "Last search failed",
