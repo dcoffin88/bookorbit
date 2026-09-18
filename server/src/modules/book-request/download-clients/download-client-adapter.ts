@@ -23,6 +23,7 @@ export interface GrabPayload {
   /** A source that serves the file itself, resolved by the indexer adapter to one direct URL. */
   fileUrl?: string;
   fileName?: string;
+  sizeBytes?: number | null;
   /**
    * How the client and poll loop identify this download. It is an infohash for a torrent and a
    * stable digest for other deliveries, keeping duplicate-grab protection client-independent.

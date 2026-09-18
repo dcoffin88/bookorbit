@@ -8,6 +8,7 @@ import type {
   DownloadClientSummary,
   DownloadClientTestResult,
   DownloadClientType,
+  DownloadDelivery,
   PathMappingHardlinkTestResult,
 } from '@bookorbit/types';
 import { DOWNLOAD_CLIENT_DELIVERY } from '@bookorbit/types';
@@ -55,14 +56,16 @@ export class DownloadClientConfigService {
    * one answers to `ManageBookRequests`, and a base URL or a `hasPassword` flag is not something
    * moderating a queue should carry with it.
    */
-  async findEnabledSummaries(): Promise<DownloadClientSummary[]> {
+  async findEnabledSummaries(delivery?: DownloadDelivery): Promise<DownloadClientSummary[]> {
     const rows = await this.repo.findAllEnabled();
-    return rows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      color: row.color ?? null,
-      delivery: DOWNLOAD_CLIENT_DELIVERY[row.adapterType as DownloadClientType],
-    }));
+    return rows
+      .filter((row) => delivery === undefined || DOWNLOAD_CLIENT_DELIVERY[row.adapterType as DownloadClientType] === delivery)
+      .map((row) => ({
+        id: row.id,
+        name: row.name,
+        color: row.color ?? null,
+        delivery: DOWNLOAD_CLIENT_DELIVERY[row.adapterType as DownloadClientType],
+      }));
   }
 
   async findOne(id: number): Promise<DownloadClientItem> {

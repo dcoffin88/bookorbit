@@ -149,7 +149,10 @@ export class BookRequestDownloadRepository {
       .where(
         and(
           inArray(bookRequestDownloads.status, [...ACTIVE_BOOK_REQUEST_DOWNLOAD_STATUSES]),
-          or(eq(bookRequestDownloads.source, 'direct_url'), isNotNull(bookRequestDownloads.downloadClientId)),
+          or(
+            and(eq(bookRequestDownloads.source, 'direct_url'), isNotNull(bookRequestDownloads.directFileName)),
+            isNotNull(bookRequestDownloads.downloadClientId),
+          ),
         ),
       );
   }
@@ -158,7 +161,13 @@ export class BookRequestDownloadRepository {
     return this.db
       .select()
       .from(bookRequestDownloads)
-      .where(and(eq(bookRequestDownloads.source, 'direct_url'), inArray(bookRequestDownloads.status, [...ACTIVE_BOOK_REQUEST_DOWNLOAD_STATUSES])));
+      .where(
+        and(
+          eq(bookRequestDownloads.source, 'direct_url'),
+          isNotNull(bookRequestDownloads.directFileName),
+          inArray(bookRequestDownloads.status, [...ACTIVE_BOOK_REQUEST_DOWNLOAD_STATUSES]),
+        ),
+      );
   }
 
   /**
@@ -315,6 +324,7 @@ export class BookRequestDownloadRepository {
         and(
           eq(bookRequestDownloads.source, 'direct_url'),
           isNotNull(bookRequestDownloads.clientKey),
+          isNotNull(bookRequestDownloads.directFileName),
           inArray(bookRequestDownloads.status, [...UNSETTLED_BOOK_REQUEST_DOWNLOAD_STATUSES]),
         ),
       );

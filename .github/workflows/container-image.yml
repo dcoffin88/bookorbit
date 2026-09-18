@@ -1,98 +1,69 @@
 name: Container Image
-run-name: >-
-  ${{ github.event_name == 'workflow_run' && format('Image - {0} ({1})', github.event.workflow_run.head_commit.message, github.event.workflow_run.head_branch) || format('Image - {0}', github.ref_name) }}
+run-name: "Container Image - ${{ inputs.version }}"
 
 on:
-  # Break-glass: bypasses CI/E2E gate. Use only when CI is broken and a hotfix image is urgently needed.
   workflow_dispatch:
     inputs:
-      force_rebuild:
-        description: Rebuild even if image for this SHA already exists in GHCR
-        type: boolean
-        default: false
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
-    branches: [main]
+      version:
+        description: "Release version (example: 1.0.0)"
+        required: true
+        type: string
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
-  cancel-in-progress: true
+  group: container-image-release
+  cancel-in-progress: false
 
 permissions:
   actions: read
+  checks: write
   contents: read
+  packages: write
+  pull-requests: read
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  # Main push path: resolve context once, then build multi-arch natively in parallel.
+  ci:
+    name: Run CI
+    uses: ./.github/workflows/ci.yml
+
   prepare:
-    name: Resolve Build Context
-    if: >
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'workflow_run' &&
-       github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.event == 'push')
+    name: Resolve Release Context
+    needs: [ci]
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    permissions:
-      contents: read
-      packages: read
     outputs:
       source_sha: ${{ steps.ctx.outputs.source_sha }}
-      source_sha_short: ${{ steps.ctx.outputs.source_sha_short }}
-      update_main: ${{ steps.ctx.outputs.update_main }}
-      skip_build: ${{ steps.ctx.outputs.skip_build }}
+      release_version: ${{ steps.ctx.outputs.release_version }}
     steps:
-      - name: Resolve build context
+      - name: Validate release
         id: ctx
         shell: bash
         env:
-          EVENT_NAME: ${{ github.event_name }}
           GH_REF: ${{ github.ref }}
-          WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           GH_SHA: ${{ github.sha }}
-          GH_TOKEN: ${{ github.token }}
-          IMAGE_NAME: ${{ github.repository }}
-          FORCE_REBUILD: ${{ inputs.force_rebuild }}
+          VERSION: ${{ inputs.version }}
         run: |
-          if [[ "$EVENT_NAME" == "workflow_dispatch" && "$GH_REF" != "refs/heads/main" ]]; then
-            echo "::error::workflow_dispatch is only supported from main."
+          set -euo pipefail
+
+          if [[ "$GH_REF" != "refs/heads/main" ]]; then
+            echo "::error::Container releases are only supported from main."
             exit 1
           fi
-          if [[ "$EVENT_NAME" == "workflow_run" ]]; then
-            SOURCE_SHA="$WORKFLOW_RUN_HEAD_SHA"
-            echo "update_main=true" >> "$GITHUB_OUTPUT"
-          else
-            SOURCE_SHA="$GH_SHA"
-            echo "update_main=false" >> "$GITHUB_OUTPUT"
+
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Version must use X.Y.Z format, for example 2.9.1"
+            exit 1
           fi
-          SOURCE_SHA_SHORT="${SOURCE_SHA:0:12}"
-          echo "source_sha=${SOURCE_SHA}" >> "$GITHUB_OUTPUT"
-          echo "source_sha_short=${SOURCE_SHA_SHORT}" >> "$GITHUB_OUTPUT"
-          IMAGE_LOWER=$(echo "${IMAGE_NAME}" | tr '[:upper:]' '[:lower:]')
-          HTTP_STATUS_SHORT=$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "Accept: application/vnd.oci.image.index.v1+json" \
-            "https://ghcr.io/v2/${IMAGE_LOWER}/manifests/sha-${SOURCE_SHA_SHORT}")
-          HTTP_STATUS_FULL=$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "Accept: application/vnd.oci.image.index.v1+json" \
-            "https://ghcr.io/v2/${IMAGE_LOWER}/manifests/sha-${SOURCE_SHA}")
-          if [[ ("$HTTP_STATUS_SHORT" == "200" || "$HTTP_STATUS_FULL" == "200") && "${FORCE_REBUILD}" != "true" ]]; then
-            echo "Image sha-${SOURCE_SHA_SHORT} already exists in GHCR, skipping rebuild."
-            echo "skip_build=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip_build=false" >> "$GITHUB_OUTPUT"
-          fi
+
+          echo "source_sha=${GH_SHA}" >> "$GITHUB_OUTPUT"
+          echo "release_version=${VERSION}" >> "$GITHUB_OUTPUT"
 
   build-amd64:
     name: Build and Push amd64
     needs: [prepare]
-    if: needs.prepare.outputs.skip_build != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -100,9 +71,6 @@ jobs:
       packages: write
     outputs:
       digest: ${{ steps.build.outputs.digest }}
-    env:
-      REGISTRY: ghcr.io
-      IMAGE_NAME: ${{ github.repository }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -127,7 +95,7 @@ jobs:
           file: ./Dockerfile
           outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
           platforms: linux/amd64
-          build-args: APP_VERSION=sha-${{ needs.prepare.outputs.source_sha_short }}
+          build-args: APP_VERSION=${{ needs.prepare.outputs.release_version }}
           cache-from: type=gha,scope=container-image-yml-amd64
           cache-to: type=gha,mode=max,scope=container-image-yml-amd64
 
@@ -146,7 +114,6 @@ jobs:
   build-arm64:
     name: Build and Push arm64
     needs: [prepare]
-    if: needs.prepare.outputs.skip_build != 'true'
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 45
     permissions:
@@ -154,9 +121,6 @@ jobs:
       packages: write
     outputs:
       digest: ${{ steps.build.outputs.digest }}
-    env:
-      REGISTRY: ghcr.io
-      IMAGE_NAME: ${{ github.repository }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -181,7 +145,7 @@ jobs:
           file: ./Dockerfile
           outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
           platforms: linux/arm64
-          build-args: APP_VERSION=sha-${{ needs.prepare.outputs.source_sha_short }}
+          build-args: APP_VERSION=${{ needs.prepare.outputs.release_version }}
           cache-from: type=gha,scope=container-image-yml-arm64
           cache-to: type=gha,mode=max,scope=container-image-yml-arm64
 
@@ -197,18 +161,14 @@ jobs:
           ignore-unfixed: true
           exit-code: "1"
 
-  merge-manifest:
-    name: Merge and Push Multi-Arch Manifest
+  publish:
+    name: Publish Multi-Arch Release
     needs: [prepare, build-amd64, build-arm64]
-    if: needs.prepare.outputs.skip_build != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
       packages: write
-    env:
-      REGISTRY: ghcr.io
-      IMAGE_NAME: ${{ github.repository }}
     steps:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003 # v4.4.0
@@ -220,40 +180,24 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GHCR_TOKEN != '' && secrets.GHCR_TOKEN || github.token }}
 
-      - name: Create SHA manifest
+      - name: Publish version and latest
         shell: bash
         env:
           REGISTRY: ${{ env.REGISTRY }}
           IMAGE: ${{ env.IMAGE_NAME }}
-          SHA_SHORT: ${{ needs.prepare.outputs.source_sha_short }}
+          VERSION: ${{ needs.prepare.outputs.release_version }}
           AMD64_DIGEST: ${{ needs.build-amd64.outputs.digest }}
           ARM64_DIGEST: ${{ needs.build-arm64.outputs.digest }}
         run: |
+          set -euo pipefail
+
           FULL_IMAGE="${REGISTRY}/${IMAGE}"
+
           docker buildx imagetools create \
-            --tag "${FULL_IMAGE}:sha-${SHA_SHORT}" \
+            --tag "${FULL_IMAGE}:${VERSION}" \
+            --tag "${FULL_IMAGE}:latest" \
             "${FULL_IMAGE}@${AMD64_DIGEST}" \
             "${FULL_IMAGE}@${ARM64_DIGEST}"
 
-      - name: Update main tag
-        if: needs.prepare.outputs.update_main == 'true'
-        shell: bash
-        env:
-          REGISTRY: ${{ env.REGISTRY }}
-          IMAGE: ${{ env.IMAGE_NAME }}
-          AMD64_DIGEST: ${{ needs.build-amd64.outputs.digest }}
-          ARM64_DIGEST: ${{ needs.build-arm64.outputs.digest }}
-        run: |
-          FULL_IMAGE="${REGISTRY}/${IMAGE}"
-          docker buildx imagetools create \
-            --tag "${FULL_IMAGE}:main" \
-            "${FULL_IMAGE}@${AMD64_DIGEST}" \
-            "${FULL_IMAGE}@${ARM64_DIGEST}"
-
-      - name: Inspect SHA manifest
-        shell: bash
-        env:
-          REGISTRY: ${{ env.REGISTRY }}
-          IMAGE: ${{ env.IMAGE_NAME }}
-          SHA_SHORT: ${{ needs.prepare.outputs.source_sha_short }}
-        run: docker buildx imagetools inspect "${REGISTRY}/${IMAGE}:sha-${SHA_SHORT}"
+          docker buildx imagetools inspect "${FULL_IMAGE}:${VERSION}"
+          docker buildx imagetools inspect "${FULL_IMAGE}:latest"

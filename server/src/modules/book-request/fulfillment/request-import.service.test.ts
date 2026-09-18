@@ -18,7 +18,8 @@ function request(overrides: Partial<BookRequestRow> = {}): BookRequestRow {
 }
 
 function download(contentPath: string, overrides: Partial<BookRequestDownloadRow> = {}): BookRequestDownloadRow {
-  return { id: 11, requestId: 7, downloadClientId: 1, contentPath, ...overrides } as BookRequestDownloadRow;
+  const directFields = overrides.source === 'direct_url' && overrides.directFileName === undefined ? { directFileName: basename(contentPath) } : {};
+  return { id: 11, requestId: 7, downloadClientId: 1, contentPath, ...directFields, ...overrides } as BookRequestDownloadRow;
 }
 
 async function makeHarness(options: { useHardlinks?: boolean } = {}) {

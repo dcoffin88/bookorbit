@@ -270,7 +270,7 @@ export class DownloadMonitorService implements OnModuleDestroy {
     if (!this.olderThan(row, MISSING_CLIENT_ITEM_GRACE_MS)) return;
     await this.fulfillment.failDownload(
       row,
-      row.source === 'direct_url'
+      isBuiltInDirect(row)
         ? 'The download was interrupted before it finished and cannot be resumed'
         : 'The download client no longer has this download',
     );
@@ -313,7 +313,7 @@ export class DownloadMonitorService implements OnModuleDestroy {
       contentPath: status.contentPath ?? row.contentPath,
       ...(movedBytes ? { lastProgressAt: new Date() } : {}),
       ...(status.state === 'completed' ? { completedAt: row.completedAt ?? new Date() } : {}),
-      ...(row.source === 'direct_url' && status.state === 'completed' ? { directUrl: null, directEtag: null, directLastModified: null } : {}),
+      ...(isBuiltInDirect(row) && status.state === 'completed' ? { directUrl: null, directEtag: null, directLastModified: null } : {}),
     });
     if (!updated) return;
 
@@ -346,5 +346,10 @@ export class DownloadMonitorService implements OnModuleDestroy {
  * watchdog is what eventually gives up on it.
  */
 function pollTargetFor(row: BookRequestDownloadRow): PollTarget | null {
-  return row.source === 'direct_url' ? DIRECT : row.downloadClientId;
+  if (isBuiltInDirect(row)) return DIRECT;
+  return row.downloadClientId;
+}
+
+function isBuiltInDirect(row: BookRequestDownloadRow): boolean {
+  return row.source === 'direct_url' && typeof row.directFileName === 'string';
 }
