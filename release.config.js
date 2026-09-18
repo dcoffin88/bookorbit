@@ -2,7 +2,7 @@
 
 const { spawnSync } = require("child_process");
 
-const DOCKER_IMAGE = "ghcr.io/bookorbit/bookorbit";
+const DOCKER_IMAGE = "ghcr.io/dcoffin88/bookorbit";
 
 const TYPES = [
   { type: "feat", section: "Features" },
@@ -190,7 +190,7 @@ function finalizeContext(ctx) {
 
 module.exports = {
   branches: ["main"],
-  repositoryUrl: "https://github.com/bookorbit/bookorbit",
+  repositoryUrl: "https://github.com/dcoffin88/bookorbit",
   tagFormat: "v${version}",
   plugins: [
     [
