@@ -129,6 +129,7 @@ describe('DownloadClientsPanel', () => {
       'transmission',
       'deluge',
       'nzbget',
+      'openbooks',
     ])
     expect(sheet().querySelector('#download-client-name')).toBeNull()
 

@@ -578,11 +578,55 @@ describe('RequestFulfillmentService.grab from a picked release', () => {
 
     await service.grab(7, { indexerId: 9, releaseGuid: 'r-1' }, user());
 
-    // No client is resolved at all: there is no row for the built-in downloader to be found in.
-    expect(clients.findPreferredEnabled).not.toHaveBeenCalled();
+    expect(clients.findPreferredEnabled).toHaveBeenCalledWith(['openbooks']);
     expect(downloads.create).toHaveBeenCalledWith(expect.objectContaining({ downloadClientId: null, source: 'direct_url' }));
     expect(direct.add).toHaveBeenCalledWith(expect.objectContaining({ fileUrl: directRelease.downloadUrl, fileName: '2868.epub' }));
     expect(adapter.add).not.toHaveBeenCalled();
+  });
+
+  it('routes an OpenBooks library URL to the matching file-capable client', async () => {
+    const directRelease = { ...RELEASE, downloadUrl: 'http://openbooks/library/sometimes-i-lie.epub', format: 'epub' };
+    const { service, clients, downloads, direct, adapter } = makeService({
+      clients: {
+        findPreferredEnabled: vi.fn().mockResolvedValue({ id: 5 }),
+        findOne: vi.fn().mockResolvedValue({
+          id: 5,
+          name: 'OpenBooks',
+          adapterType: 'openbooks',
+          baseUrl: 'http://openbooks',
+          enabled: true,
+          pathMappings: [{ id: 1 }],
+        }),
+        resolveConfig: vi.fn().mockResolvedValue({ id: 5, adapterType: 'openbooks' }),
+      },
+      indexers: {
+        resolveConfig: vi.fn().mockResolvedValue({
+          id: 9,
+          name: 'OpenBooks',
+          adapterType: 'openbooks-indexer',
+          seedRatioGoal: null,
+        }),
+      },
+      releases: { find: vi.fn().mockReturnValue(directRelease) },
+      indexerAdapter: {
+        resolveFile: vi.fn().mockResolvedValue({
+          url: directRelease.downloadUrl,
+          fileName: 'sometimes-i-lie.epub',
+          sizeBytes: 1234,
+          format: 'epub',
+        }),
+      },
+    });
+
+    await service.grab(7, { indexerId: 9, releaseGuid: 'r-1' }, user());
+
+    expect(clients.findPreferredEnabled).toHaveBeenCalledWith(['openbooks']);
+    expect(downloads.create).toHaveBeenCalledWith(expect.objectContaining({ downloadClientId: 5, source: 'direct_url', directUrl: null }));
+    expect(adapter.add).toHaveBeenCalledWith(
+      expect.objectContaining({ fileUrl: directRelease.downloadUrl, fileName: 'sometimes-i-lie.epub' }),
+      expect.objectContaining({ adapterType: 'openbooks' }),
+    );
+    expect(direct.add).not.toHaveBeenCalled();
   });
 
   /**
