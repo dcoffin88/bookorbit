@@ -130,6 +130,7 @@ describe('DownloadClientsPanel', () => {
       'deluge',
       'nzbget',
       'sabnzbd',
+      'openbooks',
     ])
     expect(sheet().querySelector('#download-client-name')).toBeNull()
 

@@ -250,9 +250,10 @@ export class RequestFulfillmentService {
 
     // Deliberately outside it: this refuses on the routing alone, before anything is asked of a
     // client, and an attempt nothing was ever asked to take is not an attempt.
-    const client = await this.resolveClient(dto.downloadClientId ?? null, grab.source);
-    const directUrl = client === null ? requireFileUrl(grab) : null;
-    const directFileName = client === null ? stagedDirectFileName(grab.fileName, grab.releaseFormat) : null;
+    const client = await this.resolveClient(dto.downloadClientId ?? null, grab);
+    const isBuiltInDirect = client === null && grab.source === 'direct_url';
+    const directUrl = grab.source === 'direct_url' ? requireFileUrl(grab) : null;
+    const directFileName = grab.source === 'direct_url' ? stagedDirectFileName(grab.fileName, grab.releaseFormat) : null;
 
     let download: BookRequestDownloadRow;
     try {
@@ -269,8 +270,8 @@ export class RequestFulfillmentService {
         releaseFormat: grab.releaseFormat ?? null,
         freeleech: grab.freeleech ?? false,
         clientKey: grab.clientKey,
-        directUrl,
-        directFileName,
+        directUrl: isBuiltInDirect ? directUrl : null,
+        directFileName: isBuiltInDirect ? directFileName : null,
         status: 'queued',
         grabbedAt: new Date(),
       });
@@ -282,7 +283,7 @@ export class RequestFulfillmentService {
     }
 
     try {
-      if (client === null) {
+      if (isBuiltInDirect) {
         await this.direct.add({
           downloadId: download.id,
           fileUrl: directUrl as string,
@@ -290,6 +291,7 @@ export class RequestFulfillmentService {
           clientKey: grab.clientKey,
         });
       } else {
+        if (client === null) throw grabError('GRAB_CLIENT_REFUSED', 'No compatible download client is configured');
         const config = await this.clients.resolveConfig(client.id);
         const adapter = this.registry.require(config.adapterType);
         await this.withTransientRetry(user === null, requestId, 'client', () =>
@@ -301,6 +303,9 @@ export class RequestFulfillmentService {
               nzbFile: grab.nzbFile,
               nzbFileName: grab.nzbFileName,
               clientKey: grab.clientKey,
+              fileUrl: directUrl ?? undefined,
+              fileName: directFileName ?? undefined,
+              sizeBytes: grab.source === 'direct_url' ? grab.releaseSizeBytes : undefined,
               // The indexer's goals, enforced by the client: BookOrbit never stops a seed itself.
               ...(grab.seedRatioGoal !== null && grab.seedRatioGoal !== undefined ? { seedRatioGoal: grab.seedRatioGoal } : {}),
               ...(grab.seedTimeMinutes !== null && grab.seedTimeMinutes !== undefined ? { seedTimeMinutes: grab.seedTimeMinutes } : {}),
@@ -314,7 +319,7 @@ export class RequestFulfillmentService {
       await this.downloads.update(download.id, {
         status: 'failed',
         errorMessage: message,
-        ...(client === null ? { directUrl: null, directEtag: null, directLastModified: null } : {}),
+        ...(isBuiltInDirect ? { directUrl: null, directEtag: null, directLastModified: null } : {}),
       });
       this.logger.warn(
         `[book_request.grab] [fail] requestId=${requestId} downloadId=${download.id} clientId=${client?.id ?? 'direct'} error="${sanitizeLogValue(message)}" - the download could not be started`,
@@ -323,7 +328,7 @@ export class RequestFulfillmentService {
       // every torrent alike, while a file BookOrbit fetches itself was refused by the source.
       throw withGrabCode(
         error,
-        client === null ? 'GRAB_SOURCE_REFUSED' : isServiceUnavailable(error) ? 'GRAB_CLIENT_UNAVAILABLE' : 'GRAB_CLIENT_REFUSED',
+        isBuiltInDirect ? 'GRAB_SOURCE_REFUSED' : isServiceUnavailable(error) ? 'GRAB_CLIENT_UNAVAILABLE' : 'GRAB_CLIENT_REFUSED',
       );
     }
 
@@ -761,11 +766,14 @@ export class RequestFulfillmentService {
    * so taking the highest-priority enabled row regardless would hand a release to a client that
    * has to reject it.
    */
-  private async resolveClient(requestedId: number | null, source: BookRequestDownloadSource) {
+  private async resolveClient(requestedId: number | null, grab: { source: BookRequestDownloadSource; fileUrl?: string }) {
     if (requestedId === null) {
-      if (DELIVERY_BY_DOWNLOAD_SOURCE[source] === 'file') return null;
+      if (DELIVERY_BY_DOWNLOAD_SOURCE[grab.source] === 'file') {
+        const preferred = await this.compatiblePreferredFileClient(grab.fileUrl);
+        return preferred;
+      }
 
-      const delivery = DELIVERY_BY_DOWNLOAD_SOURCE[source];
+      const delivery = DELIVERY_BY_DOWNLOAD_SOURCE[grab.source];
       const types = DOWNLOAD_CLIENT_TYPES.filter((type) => DOWNLOAD_CLIENT_DELIVERY[type] === delivery);
       const preferred = await this.clients.findPreferredEnabled(types);
       if (!preferred) {
@@ -778,9 +786,20 @@ export class RequestFulfillmentService {
 
     const client = await this.clients.findOne(requestedId);
     if (!client.enabled) throw grabError('GRAB_CLIENT_REFUSED', `Download client "${client.name}" is disabled`);
-    this.assertClientCanDeliver(client, source);
+    this.assertClientCanDeliver(client, grab.source);
     this.assertClientCanImport(client);
     return client;
+  }
+
+  private async compatiblePreferredFileClient(fileUrl: string | undefined) {
+    if (!fileUrl) return null;
+    const types = DOWNLOAD_CLIENT_TYPES.filter((type) => DOWNLOAD_CLIENT_DELIVERY[type] === 'file');
+    const preferred = await this.clients.findPreferredEnabled(types);
+    if (!preferred) return null;
+    const preferredClient = await this.clients.findOne(preferred.id);
+    if (!sameUrlOrigin(fileUrl, preferredClient.baseUrl)) return null;
+    this.assertClientCanImport(preferredClient);
+    return preferredClient;
   }
 
   /**
@@ -1144,4 +1163,12 @@ function assertReleaseCanImport(inspection: ReleaseFileInspection): void {
 function requireFileUrl(grab: { fileUrl?: string }): string {
   if (!grab.fileUrl) throw grabError('GRAB_RELEASE_REFUSED', 'That release did not resolve to a file to download');
   return grab.fileUrl;
+}
+
+function sameUrlOrigin(left: string, right: string): boolean {
+  try {
+    return new URL(left).origin === new URL(right).origin;
+  } catch {
+    return false;
+  }
 }

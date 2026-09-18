@@ -100,7 +100,7 @@ export class DownloadRemovalService {
 
   /** A direct file has no seed to preserve once its Book Dock copy exists. Cleanup is best-effort. */
   async cleanupStagedDirectDownload(download: BookRequestDownloadRow): Promise<void> {
-    if (download.source !== 'direct_url') return;
+    if (!isBuiltInDirectDownload(download)) return;
 
     try {
       await this.detach(download, true);
@@ -117,7 +117,7 @@ export class DownloadRemovalService {
     // An attempt a source refused was never handed to anything, so there is nothing holding it.
     if (download.clientKey === null) return;
 
-    const isDirect = download.source === 'direct_url';
+    const isDirect = isBuiltInDirectDownload(download);
     // There is no swarm to preserve on a staged file, so its bytes always go with the attempt.
     const shouldDeleteFiles = isDirect || deleteFiles;
 
@@ -149,4 +149,8 @@ export class DownloadRemovalService {
     });
     return failed !== undefined;
   }
+}
+
+function isBuiltInDirectDownload(download: BookRequestDownloadRow): boolean {
+  return download.source === 'direct_url' && typeof download.directFileName === 'string';
 }

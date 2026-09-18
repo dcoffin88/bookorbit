@@ -179,7 +179,7 @@ export class RequestImportService implements OnApplicationBootstrap {
    * configured for it, which is also what declares the directory the import may read out of.
    */
   private async resolveLocalPath(download: BookRequestDownloadRow, contentPath: string): Promise<ResolvedDownloadPath> {
-    if (download.source === 'direct_url') {
+    if (isBuiltInDirectDownload(download)) {
       const containmentRoot = directDownloadRoot(this.config.getOrThrow<string>('storage.appDataPath'));
       await this.pathMappings.assertWithinRoot(containmentRoot, contentPath);
       return { localPath: contentPath, containmentRoot };
@@ -644,7 +644,7 @@ export class RequestImportService implements OnApplicationBootstrap {
    */
   private async placeFile(sourceFile: string, destPath: string, download: BookRequestDownloadRow): Promise<void> {
     const wantsHardlink =
-      download.source === 'direct_url' || (download.downloadClientId !== null && (await this.clients.useHardlinks(download.downloadClientId)));
+      isBuiltInDirectDownload(download) || (download.downloadClientId !== null && (await this.clients.useHardlinks(download.downloadClientId)));
 
     if (wantsHardlink) {
       try {
@@ -671,6 +671,10 @@ export class RequestImportService implements OnApplicationBootstrap {
  */
 function isContinuationVolume(path: string): boolean {
   return /\.(?:r\d{2,3}|\d{3})$/i.test(path) && !/\.(?:rar|7z|zip)$/i.test(path);
+}
+
+function isBuiltInDirectDownload(download: BookRequestDownloadRow): boolean {
+  return download.source === 'direct_url' && typeof download.directFileName === 'string';
 }
 
 /**

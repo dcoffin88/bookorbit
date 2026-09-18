@@ -4,6 +4,10 @@ import { DownloadRemovalService } from './download-removal.service';
 const INFO_HASH = 'c9e15763f722f23e98a29decdfae341b98d53056';
 
 function download(overrides: Partial<BookRequestDownloadRow> = {}): BookRequestDownloadRow {
+  const directFields =
+    overrides.source === 'direct_url' && overrides.directFileName === undefined && overrides.downloadClientId === null
+      ? { directFileName: 'download.epub' }
+      : {};
   return {
     id: 11,
     requestId: 7,
@@ -11,6 +15,7 @@ function download(overrides: Partial<BookRequestDownloadRow> = {}): BookRequestD
     clientKey: INFO_HASH,
     source: 'torrent_file',
     status: 'downloading',
+    ...directFields,
     ...overrides,
   } as BookRequestDownloadRow;
 }

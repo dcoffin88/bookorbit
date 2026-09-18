@@ -105,6 +105,13 @@ describe('DownloadClientConfigService', () => {
       { id: 4, name: 'qbit', color: null, delivery: 'torrent' },
       { id: 5, name: 'usenet', color: null, delivery: 'usenet' },
     ]);
+    await expect(service.findEnabledSummaries('torrent')).resolves.toEqual([{ id: 4, name: 'qbit', color: null, delivery: 'torrent' }]);
+    // No file-capable client is present in this fixture.
+    await expect(service.findEnabledSummaries('file')).resolves.toEqual([]);
+    await expect(service.findEnabledSummaries()).resolves.toEqual([
+      { id: 4, name: 'qbit', color: null, delivery: 'torrent' },
+      { id: 5, name: 'usenet', color: null, delivery: 'usenet' },
+    ]);
   });
 
   it('answers with nothing rather than inventing a client when none is configured', async () => {
